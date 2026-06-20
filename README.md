@@ -2,6 +2,8 @@
 
 This repo trains an SFT LoRA/QLoRA adapter from local JSON files in `smol_json`.
 
+The Python environment is pinned for a CUDA 12.4-compatible PyTorch stack, which matches NVIDIA driver branch 550 on the workstation.
+
 ## Dataset Format
 
 Each JSON file must contain:
@@ -25,6 +27,14 @@ Optional:
 ```bash
 uv pip install wandb
 ```
+
+The pinned `requirements.txt` installs:
+
+- `torch==2.6.0+cu124`
+- `torchvision==0.21.0+cu124`
+- `torchaudio==2.6.0+cu124`
+
+through the PyTorch CUDA 12.4 wheel index.
 
 ## Required CLI Arguments
 
