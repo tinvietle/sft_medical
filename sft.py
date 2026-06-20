@@ -9,8 +9,8 @@ import torch
 from datasets import Dataset
 from huggingface_hub import login as hf_login
 from peft import LoraConfig
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, set_seed
-from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
+from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForImageTextToText, AutoTokenizer, BitsAndBytesConfig, set_seed
+from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES, MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES
 from trl import SFTConfig, SFTTrainer
 
 from smol_json_parser import SmolJsonDatasetParser
@@ -160,7 +160,7 @@ def load_local_datasets(dataset_dir: str, validation_ratio: float, seed: int) ->
     return split_dataset["train"], split_dataset["test"]
 
 
-def load_model_and_tokenizer(args: argparse.Namespace) -> tuple[AutoModelForCausalLM, AutoTokenizer]:
+def load_model_and_tokenizer(args: argparse.Namespace):
     torch_dtype = get_torch_dtype(args.dtype)
     quantization_config = None
     if not args.no_4bit:
@@ -175,32 +175,47 @@ def load_model_and_tokenizer(args: argparse.Namespace) -> tuple[AutoModelForCaus
         args.model_id,
         trust_remote_code=args.trust_remote_code,
     )
-    if config.model_type not in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES:
+    tokenizer_kwargs = {
+        "trust_remote_code": args.trust_remote_code,
+    }
+    if "mistral" in args.model_id.lower():
+        tokenizer_kwargs["fix_mistral_regex"] = True
+
+    if config.model_type in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES:
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_id,
+            attn_implementation=args.attn_implementation,
+            dtype=torch_dtype,
+            trust_remote_code=args.trust_remote_code,
+            config=config,
+            quantization_config=quantization_config,
+            use_cache=args.no_gradient_checkpointing,
+        )
+    elif config.model_type in MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES:
+        model = AutoModelForImageTextToText.from_pretrained(
+            args.model_id,
+            attn_implementation=args.attn_implementation,
+            dtype=torch_dtype,
+            trust_remote_code=args.trust_remote_code,
+            config=config,
+            quantization_config=quantization_config,
+            use_cache=args.no_gradient_checkpointing,
+        )
+    else:
         architectures = getattr(config, "architectures", None) or []
         architecture_name = architectures[0] if architectures else type(config).__name__
         raise ValueError(
-            "This training script only supports text-only causal language models. "
-            f"Model '{args.model_id}' resolves to architecture '{architecture_name}' "
-            f"(config type '{type(config).__name__}'), which is not supported by AutoModelForCausalLM. "
-            "Use a text-only causal LM instead, for example "
-            "'mistralai/Ministral-8B-Instruct-2410' or 'mistralai/Mistral-7B-Instruct-v0.3'."
+            f"Unsupported model architecture for training: '{architecture_name}' "
+            f"(config type '{type(config).__name__}') from model '{args.model_id}'. "
+            "This script supports text-only causal LMs and image-text-to-text models that can be trained on text inputs."
         )
 
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_id,
-        attn_implementation=args.attn_implementation,
-        dtype=torch_dtype,
-        trust_remote_code=args.trust_remote_code,
-        config=config,
-        quantization_config=quantization_config,
-        use_cache=args.no_gradient_checkpointing,
-    )
     if not args.no_gradient_checkpointing:
         model.config.use_cache = False
 
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_id,
-        trust_remote_code=args.trust_remote_code,
+        **tokenizer_kwargs,
     )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -322,6 +337,7 @@ def main() -> None:
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
+        processing_class=tokenizer,
         peft_config=peft_config,
     )
 
