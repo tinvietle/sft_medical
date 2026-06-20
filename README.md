@@ -15,13 +15,15 @@ The system prompt is defined in `sft.py`.
 ## Installation
 
 ```bash
-pip install -r requirements.txt
+uv python install 3.12
+uv venv --python 3.12
+uv pip install -r requirements.txt
 ```
 
 Optional:
 
 ```bash
-pip install wandb
+uv pip install wandb
 ```
 
 ## Required CLI Arguments
@@ -37,7 +39,7 @@ The training script requires these flags:
 ## Example
 
 ```bash
-python sft.py \
+.venv/bin/python sft.py \
   --dataset-dir smol_json \
   --model-id Qwen/Qwen3-0.6B \
   --output-dir Qwen3-0.6B-SFT \
@@ -57,3 +59,4 @@ Use `.env.example` as a template for:
 - Use `--disable-wandb` if you do not want Weights & Biases logging.
 - Use `--no-push-to-hub` if you do not want to upload to Hugging Face Hub.
 - `wandb` is not required unless you want W&B logging.
+- `.python-version` pins the project to Python 3.12 for `uv`.
