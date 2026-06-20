@@ -20,6 +20,7 @@ The system prompt is defined in `sft.py`.
 uv python install 3.12
 uv venv --python 3.12
 uv pip install -r requirements.txt
+uv pip install --index-url https://download.pytorch.org/whl/cu124 -r requirements-cu124.txt
 ```
 
 Optional:
@@ -28,7 +29,7 @@ Optional:
 uv pip install wandb
 ```
 
-The pinned `requirements.txt` installs:
+The pinned CUDA 12.4 PyTorch install is separated into `requirements-cu124.txt`:
 
 - `torch==2.6.0+cu124`
 - `torchvision==0.21.0+cu124`
