@@ -53,6 +53,28 @@ DEFAULT_TARGET_MODULES = [
 ]
 
 
+def load_env(env_path: str = ".env") -> None:
+    path = Path(env_path)
+    if not path.is_file():
+        return
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            continue
+
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+
+        os.environ.setdefault(key, value)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Train an SFT LoRA/QLoRA adapter from local JSON files and optionally upload it to the Hugging Face Hub.",
@@ -253,6 +275,7 @@ def save_and_push_outputs(
 
 
 def main() -> None:
+    load_env()
     args = parse_args()
     set_seed(args.seed)
 

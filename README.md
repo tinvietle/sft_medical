@@ -53,6 +53,8 @@ Use `.env.example` as a template for:
 - `HF_TOKEN`
 - `WANDB_API_KEY` or `WANDB_TOKEN`
 
+The script automatically loads `.env` at startup.
+
 ## Notes
 
 - Files with both empty `reasoning` and empty `answer` are skipped.
