@@ -9,7 +9,8 @@ import torch
 from datasets import Dataset
 from huggingface_hub import login as hf_login
 from peft import LoraConfig
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, set_seed
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, set_seed
+from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
 from trl import SFTConfig, SFTTrainer
 
 from smol_json_parser import SmolJsonDatasetParser
@@ -170,11 +171,27 @@ def load_model_and_tokenizer(args: argparse.Namespace) -> tuple[AutoModelForCaus
             bnb_4bit_quant_type="nf4",
         )
 
+    config = AutoConfig.from_pretrained(
+        args.model_id,
+        trust_remote_code=args.trust_remote_code,
+    )
+    if config.model_type not in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES:
+        architectures = getattr(config, "architectures", None) or []
+        architecture_name = architectures[0] if architectures else type(config).__name__
+        raise ValueError(
+            "This training script only supports text-only causal language models. "
+            f"Model '{args.model_id}' resolves to architecture '{architecture_name}' "
+            f"(config type '{type(config).__name__}'), which is not supported by AutoModelForCausalLM. "
+            "Use a text-only causal LM instead, for example "
+            "'mistralai/Ministral-8B-Instruct-2410' or 'mistralai/Mistral-7B-Instruct-v0.3'."
+        )
+
     model = AutoModelForCausalLM.from_pretrained(
         args.model_id,
         attn_implementation=args.attn_implementation,
-        torch_dtype=torch_dtype,
+        dtype=torch_dtype,
         trust_remote_code=args.trust_remote_code,
+        config=config,
         quantization_config=quantization_config,
         use_cache=args.no_gradient_checkpointing,
     )
