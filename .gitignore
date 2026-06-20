@@ -1,0 +1,23 @@
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local environment files
+.env
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Training outputs
+*-merged/
+Qwen*-SFT/
+
+# OS/editor noise
+.DS_Store
+
+smol_json/
