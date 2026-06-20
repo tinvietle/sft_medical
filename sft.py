@@ -162,8 +162,15 @@ def load_local_datasets(dataset_dir: str, validation_ratio: float, seed: int) ->
 
 def load_model_and_tokenizer(args: argparse.Namespace):
     torch_dtype = get_torch_dtype(args.dtype)
+    config = AutoConfig.from_pretrained(
+        args.model_id,
+        trust_remote_code=args.trust_remote_code,
+    )
     quantization_config = None
-    if not args.no_4bit:
+    has_builtin_quantization = getattr(config, "quantization_config", None) is not None
+    if has_builtin_quantization:
+        print(f"Using model-provided quantization config for {args.model_id}; skipping BitsAndBytes 4-bit override.")
+    elif not args.no_4bit:
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_compute_dtype=torch_dtype,
@@ -171,10 +178,6 @@ def load_model_and_tokenizer(args: argparse.Namespace):
             bnb_4bit_quant_type="nf4",
         )
 
-    config = AutoConfig.from_pretrained(
-        args.model_id,
-        trust_remote_code=args.trust_remote_code,
-    )
     tokenizer_kwargs = {
         "trust_remote_code": args.trust_remote_code,
     }
