@@ -18,6 +18,12 @@ The system prompt is defined in `sft.py`.
 pip install -r requirements.txt
 ```
 
+Optional:
+
+```bash
+pip install wandb
+```
+
 ## Required CLI Arguments
 
 The training script requires these flags:
@@ -50,4 +56,4 @@ Use `.env.example` as a template for:
 - Files with both empty `reasoning` and empty `answer` are skipped.
 - Use `--disable-wandb` if you do not want Weights & Biases logging.
 - Use `--no-push-to-hub` if you do not want to upload to Hugging Face Hub.
-
+- `wandb` is not required unless you want W&B logging.
