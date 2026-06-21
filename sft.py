@@ -7,7 +7,7 @@ from pathlib import Path
 
 import torch
 from datasets import Dataset
-from huggingface_hub import login as hf_login
+from huggingface_hub import login as hf_login, snapshot_download
 from peft import LoraConfig
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForImageTextToText, AutoTokenizer, BitsAndBytesConfig, set_seed
 from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES, MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES
@@ -83,6 +83,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset-dir", default="smol_json", help="Local directory of JSON files with full_prompt, reasoning, and answer fields.")
     parser.add_argument("--validation-ratio", type=float, default=0.1, help="Validation split ratio used when loading from --dataset-dir.")
     parser.add_argument("--model-id", required=True, help="Base model identifier to fine-tune.")
+    parser.add_argument("--model-cache-dir", default=None, help="Optional local directory where the model snapshot will be downloaded and reused.")
+    parser.add_argument("--download-model-only", action="store_true", help="Download the model to --model-cache-dir and exit without training.")
     parser.add_argument("--output-dir", required=True, help="Directory to save the trained adapter.")
     parser.add_argument("--hub-model-id", default=None)
     parser.add_argument("--merged-output-dir", default=None)
@@ -160,10 +162,31 @@ def load_local_datasets(dataset_dir: str, validation_ratio: float, seed: int) ->
     return split_dataset["train"], split_dataset["test"]
 
 
-def load_model_and_tokenizer(args: argparse.Namespace):
+def resolve_model_source(args: argparse.Namespace) -> str:
+    model_path = Path(args.model_id)
+    if model_path.is_dir():
+        return str(model_path)
+
+    if not args.model_cache_dir:
+        return args.model_id
+
+    cache_root = Path(args.model_cache_dir)
+    local_model_dir = cache_root / args.model_id.replace("/", "--")
+    local_model_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_download(
+        repo_id=args.model_id,
+        local_dir=str(local_model_dir),
+        local_dir_use_symlinks=False,
+        ignore_patterns=["*.gguf", "*.onnx", "*.h5", "*.msgpack", "*.ot"],
+    )
+    print(f"Model snapshot ready at {local_model_dir}")
+    return str(local_model_dir)
+
+
+def load_model_and_tokenizer(args: argparse.Namespace, model_source: str):
     torch_dtype = get_torch_dtype(args.dtype)
     config = AutoConfig.from_pretrained(
-        args.model_id,
+        model_source,
         trust_remote_code=args.trust_remote_code,
     )
     quantization_config = None
@@ -186,7 +209,7 @@ def load_model_and_tokenizer(args: argparse.Namespace):
 
     if config.model_type in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES:
         model = AutoModelForCausalLM.from_pretrained(
-            args.model_id,
+            model_source,
             attn_implementation=args.attn_implementation,
             dtype=torch_dtype,
             trust_remote_code=args.trust_remote_code,
@@ -196,7 +219,7 @@ def load_model_and_tokenizer(args: argparse.Namespace):
         )
     elif config.model_type in MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES:
         model = AutoModelForImageTextToText.from_pretrained(
-            args.model_id,
+            model_source,
             attn_implementation=args.attn_implementation,
             dtype=torch_dtype,
             trust_remote_code=args.trust_remote_code,
@@ -217,7 +240,7 @@ def load_model_and_tokenizer(args: argparse.Namespace):
         model.config.use_cache = False
 
     tokenizer = AutoTokenizer.from_pretrained(
-        args.model_id,
+        model_source,
         **tokenizer_kwargs,
     )
     if tokenizer.pad_token is None:
@@ -313,6 +336,10 @@ def main() -> None:
     load_env()
     args = parse_args()
     set_seed(args.seed)
+    model_source = resolve_model_source(args)
+    if args.download_model_only:
+        print(f"Downloaded model '{args.model_id}' to {model_source}")
+        return
 
     report_to = login_services(
         push_to_hub=not args.no_push_to_hub,
@@ -331,7 +358,7 @@ def main() -> None:
     print(f"Training samples: {len(train_dataset)}")
     print(f"Evaluation samples: {len(eval_dataset)}")
 
-    model, tokenizer = load_model_and_tokenizer(args)
+    model, tokenizer = load_model_and_tokenizer(args, model_source=model_source)
     peft_config = build_peft_config(args)
     training_args = build_training_args(args, report_to=report_to)
 

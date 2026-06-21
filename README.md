@@ -47,14 +47,31 @@ The training script requires these flags:
 
 `--dataset-dir` defaults to `smol_json`.
 
+Optional model caching flags:
+
+- `--model-cache-dir`
+- `--download-model-only`
+
 ## Example
 
 ```bash
 .venv/bin/python sft.py \
   --dataset-dir smol_json \
   --model-id Qwen/Qwen3-0.6B \
+  --model-cache-dir .model-cache \
   --output-dir Qwen3-0.6B-SFT \
   --wandb-project MedCaseReasoning
+```
+
+To download a model snapshot once and exit:
+
+```bash
+.venv/bin/python sft.py \
+  --model-id Qwen/Qwen3-0.6B \
+  --model-cache-dir .model-cache \
+  --output-dir unused \
+  --wandb-project MedCaseReasoning \
+  --download-model-only
 ```
 
 ## Environment Variables
