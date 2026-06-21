@@ -176,7 +176,6 @@ def resolve_model_source(args: argparse.Namespace) -> str:
     snapshot_download(
         repo_id=args.model_id,
         local_dir=str(local_model_dir),
-        local_dir_use_symlinks=False,
         ignore_patterns=["*.gguf", "*.onnx", "*.h5", "*.msgpack", "*.ot"],
     )
     print(f"Model snapshot ready at {local_model_dir}")
@@ -189,6 +188,7 @@ def load_model_and_tokenizer(args: argparse.Namespace, model_source: str):
         model_source,
         trust_remote_code=args.trust_remote_code,
     )
+    config.use_cache = args.no_gradient_checkpointing
     quantization_config = None
     has_builtin_quantization = getattr(config, "quantization_config", None) is not None
     if has_builtin_quantization:
@@ -215,7 +215,6 @@ def load_model_and_tokenizer(args: argparse.Namespace, model_source: str):
             trust_remote_code=args.trust_remote_code,
             config=config,
             quantization_config=quantization_config,
-            use_cache=args.no_gradient_checkpointing,
         )
     elif config.model_type in MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES:
         model = AutoModelForImageTextToText.from_pretrained(
@@ -225,7 +224,6 @@ def load_model_and_tokenizer(args: argparse.Namespace, model_source: str):
             trust_remote_code=args.trust_remote_code,
             config=config,
             quantization_config=quantization_config,
-            use_cache=args.no_gradient_checkpointing,
         )
     else:
         architectures = getattr(config, "architectures", None) or []
