@@ -99,7 +99,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gradient-accumulation-steps", type=int, default=4)
     parser.add_argument("--warmup-ratio", type=float, default=0.1)
     parser.add_argument("--max-steps", type=int, default=None, help="Optional hard cap on optimizer steps. When omitted, training is controlled by --num-train-epochs.")
-    parser.add_argument("--num-train-epochs", type=float, default=1, help="Number of full passes over the training dataset.")
+    parser.add_argument("--num-train-epochs", type=int, default=1, help="Number of full passes over the training dataset.")
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--weight-decay", type=float, default=0.0)
     parser.add_argument("--neftune-noise-alpha", type=float, default=5.0)
@@ -195,6 +195,7 @@ def load_model_and_tokenizer(args: argparse.Namespace, model_source: str):
     if has_builtin_quantization:
         print(f"Using model-provided quantization config for {args.model_id}; skipping BitsAndBytes 4-bit override.")
     elif not args.no_4bit:
+        print(f"Using BitsAndBytes 4-bit quantization for {args.model_id}.")
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_compute_dtype=torch_dtype,
@@ -264,7 +265,7 @@ def build_training_args(args: argparse.Namespace, report_to: str) -> SFTConfig:
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         warmup_ratio=args.warmup_ratio,
         num_train_epochs=args.num_train_epochs,
-        max_steps=args.max_steps,
+        # max_steps=args.max_steps,
         learning_rate=args.learning_rate,
         optim="paged_adamw_8bit",
         neftune_noise_alpha=args.neftune_noise_alpha,
