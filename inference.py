@@ -36,8 +36,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-new-tokens",
         type=int,
-        default=512,
-        help="Maximum number of new tokens to generate.",
+        default=None,
+        help="Optional maximum number of new tokens to generate. Omit to leave generation uncapped.",
     )
     parser.add_argument(
         "--temperature",
@@ -171,11 +171,12 @@ def main() -> None:
     model_inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
 
     generation_kwargs = {
-        "max_new_tokens": args.max_new_tokens,
         "pad_token_id": tokenizer.pad_token_id,
         "eos_token_id": tokenizer.eos_token_id,
         "do_sample": args.do_sample,
     }
+    if args.max_new_tokens is not None:
+        generation_kwargs["max_new_tokens"] = args.max_new_tokens
     if args.do_sample:
         generation_kwargs["temperature"] = args.temperature
         generation_kwargs["top_p"] = args.top_p
