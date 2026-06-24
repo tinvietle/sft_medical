@@ -98,7 +98,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--per-device-eval-batch-size", type=int, default=1)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=4)
     parser.add_argument("--warmup-ratio", type=float, default=0.1)
-    parser.add_argument("--max-steps", type=int, default=200)
+    parser.add_argument("--max-steps", type=int, default=None, help="Optional hard cap on optimizer steps. When omitted, training is controlled by --num-train-epochs.")
+    parser.add_argument("--num-train-epochs", type=float, default=1, help="Number of full passes over the training dataset.")
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--weight-decay", type=float, default=0.0)
     parser.add_argument("--neftune-noise-alpha", type=float, default=5.0)
@@ -262,6 +263,7 @@ def build_training_args(args: argparse.Namespace, report_to: str) -> SFTConfig:
         per_device_eval_batch_size=args.per_device_eval_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         warmup_ratio=args.warmup_ratio,
+        num_train_epochs=args.num_train_epochs,
         max_steps=args.max_steps,
         learning_rate=args.learning_rate,
         optim="paged_adamw_8bit",
