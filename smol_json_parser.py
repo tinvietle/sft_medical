@@ -10,7 +10,7 @@ from datasets import Dataset
 class SmolJsonDatasetParser:
     """Parse local JSON case files into the trainer's messages format."""
 
-    REQUIRED_KEYS = ("full_prompt", "reasoning", "answer")
+    REQUIRED_KEYS = ("case_text", "reasoning", "answer")
 
     def __init__(
         self,
@@ -52,7 +52,7 @@ class SmolJsonDatasetParser:
             missing = ", ".join(missing_keys)
             raise ValueError(f"Missing required key(s) in {path}: {missing}")
 
-        full_prompt = self._require_non_empty_string(payload["full_prompt"], path, "full_prompt")
+        case_text = self._require_non_empty_string(payload["case_text"], path, "case_text")
         reasoning = self._require_string(payload["reasoning"], path, "reasoning")
         answer = self._require_string(payload["answer"], path, "answer")
 
@@ -69,7 +69,7 @@ class SmolJsonDatasetParser:
                 },
                 {
                     "role": "user",
-                    "content": full_prompt,
+                    "content": case_text,
                     "thinking": None,
                 },
                 {
