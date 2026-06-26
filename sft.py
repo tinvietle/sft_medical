@@ -247,6 +247,11 @@ def load_model_and_tokenizer(args: argparse.Namespace, model_source: str):
     if not args.no_gradient_checkpointing:
         model.config.use_cache = False
 
+    # Preserve the canonical Hub model ID in saved PEFT metadata even when
+    # training loaded weights from a local snapshot cache.
+    model.name_or_path = args.model_id
+    model.config.name_or_path = args.model_id
+
     tokenizer = AutoTokenizer.from_pretrained(
         model_source,
         **tokenizer_kwargs,
@@ -322,7 +327,7 @@ def save_and_push_outputs(
     tokenizer.save_pretrained(args.output_dir)
 
     if not args.no_push_to_hub:
-        trainer.push_to_hub(dataset_name=Path(args.dataset_dir).name)
+        trainer.push_to_hub()
         tokenizer.push_to_hub(args.hub_model_id)
 
     if not args.push_merged:

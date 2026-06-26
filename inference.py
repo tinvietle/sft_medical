@@ -6,8 +6,8 @@ import os
 from pathlib import Path
 
 import torch
-from peft import AutoPeftModelForCausalLM, PeftConfig
-from transformers import AutoConfig, AutoTokenizer, BitsAndBytesConfig
+from peft import PeftModel
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 from sft import SYSTEM_PROMPT, get_torch_dtype, load_env
 
@@ -17,7 +17,12 @@ text = ""
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run inference with a trained SFT LoRA/QLoRA adapter hosted on Hugging Face.",
+        description="Run inference by loading a base model first, then attaching a LoRA/QLoRA adapter from Hugging Face.",
+    )
+    parser.add_argument(
+        "--model-id",
+        required=True,
+        help="Base model repo ID or local path.",
     )
     parser.add_argument(
         "--adapter-id",
@@ -99,7 +104,7 @@ def resolve_input_text(args: argparse.Namespace) -> str:
 
 
 def build_quantization_config(
-    base_model_name_or_path: str,
+    model_id: str,
     *,
     dtype_name: str,
     trust_remote_code: bool,
@@ -107,7 +112,7 @@ def build_quantization_config(
     token: str | None,
 ) -> BitsAndBytesConfig | None:
     config = AutoConfig.from_pretrained(
-        base_model_name_or_path,
+        model_id,
         trust_remote_code=trust_remote_code,
         token=token,
     )
@@ -129,25 +134,16 @@ def build_quantization_config(
 
 
 def load_tokenizer(
-    adapter_id: str,
+    model_id: str,
     *,
-    base_model_id: str,
     trust_remote_code: bool,
     token: str | None,
 ):
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(
-            adapter_id,
-            trust_remote_code=trust_remote_code,
-            token=token,
-        )
-    except OSError:
-        tokenizer = AutoTokenizer.from_pretrained(
-            base_model_id,
-            trust_remote_code=trust_remote_code,
-            token=token,
-        )
-
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_id,
+        trust_remote_code=trust_remote_code,
+        token=token,
+    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left"
@@ -160,9 +156,8 @@ def main() -> None:
     input_text = resolve_input_text(args)
     hf_token = get_hf_token()
 
-    peft_config = PeftConfig.from_pretrained(args.adapter_id, token=hf_token)
     quantization_config = build_quantization_config(
-        peft_config.base_model_name_or_path,
+        args.model_id,
         dtype_name=args.dtype,
         trust_remote_code=args.trust_remote_code,
         no_4bit=args.no_4bit,
@@ -170,8 +165,8 @@ def main() -> None:
     )
     torch_dtype = get_torch_dtype(args.dtype)
 
-    model = AutoPeftModelForCausalLM.from_pretrained(
-        args.adapter_id,
+    base_model = AutoModelForCausalLM.from_pretrained(
+        args.model_id,
         torch_dtype=torch_dtype,
         trust_remote_code=args.trust_remote_code,
         attn_implementation=args.attn_implementation,
@@ -179,11 +174,15 @@ def main() -> None:
         device_map="auto",
         token=hf_token,
     )
-    model.eval()
+    fine_tuned_model = PeftModel.from_pretrained(
+        base_model,
+        args.adapter_id,
+        token=hf_token,
+    )
+    fine_tuned_model.eval()
 
     tokenizer = load_tokenizer(
-        args.adapter_id,
-        base_model_id=peft_config.base_model_name_or_path,
+        args.model_id,
         trust_remote_code=args.trust_remote_code,
         token=hf_token,
     )
@@ -197,7 +196,7 @@ def main() -> None:
         tokenize=False,
         add_generation_prompt=True,
     )
-    model_inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+    model_inputs = tokenizer(prompt, return_tensors="pt").to(fine_tuned_model.device)
 
     generation_kwargs = {
         "pad_token_id": tokenizer.pad_token_id,
@@ -211,7 +210,7 @@ def main() -> None:
         generation_kwargs["top_p"] = args.top_p
 
     with torch.no_grad():
-        output_ids = model.generate(**model_inputs, **generation_kwargs)
+        output_ids = fine_tuned_model.generate(**model_inputs, **generation_kwargs)
 
     prompt_length = model_inputs["input_ids"].shape[-1]
     generated_ids = output_ids[0][prompt_length:]
