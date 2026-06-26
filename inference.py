@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 import torch
@@ -16,12 +17,12 @@ text = ""
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run inference with a trained SFT LoRA/QLoRA adapter.",
+        description="Run inference with a trained SFT LoRA/QLoRA adapter hosted on Hugging Face.",
     )
     parser.add_argument(
-        "--adapter-dir",
+        "--adapter-id",
         required=True,
-        help="Directory containing the trained adapter.",
+        help="Hugging Face repo ID for the trained adapter.",
     )
     parser.add_argument(
         "--text",
@@ -80,6 +81,10 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def get_hf_token() -> str | None:
+    return os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_HUB_TOKEN")
+
+
 def resolve_input_text(args: argparse.Namespace) -> str:
     if args.text is not None:
         value = args.text.strip()
@@ -99,10 +104,12 @@ def build_quantization_config(
     dtype_name: str,
     trust_remote_code: bool,
     no_4bit: bool,
+    token: str | None,
 ) -> BitsAndBytesConfig | None:
     config = AutoConfig.from_pretrained(
         base_model_name_or_path,
         trust_remote_code=trust_remote_code,
+        token=token,
     )
     has_builtin_quantization = getattr(config, "quantization_config", None) is not None
     if has_builtin_quantization:
@@ -121,11 +128,26 @@ def build_quantization_config(
     )
 
 
-def load_tokenizer(adapter_dir: str, trust_remote_code: bool):
-    tokenizer = AutoTokenizer.from_pretrained(
-        adapter_dir,
-        trust_remote_code=trust_remote_code,
-    )
+def load_tokenizer(
+    adapter_id: str,
+    *,
+    base_model_id: str,
+    trust_remote_code: bool,
+    token: str | None,
+):
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(
+            adapter_id,
+            trust_remote_code=trust_remote_code,
+            token=token,
+        )
+    except OSError:
+        tokenizer = AutoTokenizer.from_pretrained(
+            base_model_id,
+            trust_remote_code=trust_remote_code,
+            token=token,
+        )
+
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left"
@@ -136,28 +158,35 @@ def main() -> None:
     load_env()
     args = parse_args()
     input_text = resolve_input_text(args)
-    adapter_dir = str(Path(args.adapter_dir).resolve())
+    hf_token = get_hf_token()
 
-    peft_config = PeftConfig.from_pretrained(adapter_dir)
+    peft_config = PeftConfig.from_pretrained(args.adapter_id, token=hf_token)
     quantization_config = build_quantization_config(
         peft_config.base_model_name_or_path,
         dtype_name=args.dtype,
         trust_remote_code=args.trust_remote_code,
         no_4bit=args.no_4bit,
+        token=hf_token,
     )
     torch_dtype = get_torch_dtype(args.dtype)
 
     model = AutoPeftModelForCausalLM.from_pretrained(
-        adapter_dir,
+        args.adapter_id,
         torch_dtype=torch_dtype,
         trust_remote_code=args.trust_remote_code,
         attn_implementation=args.attn_implementation,
         quantization_config=quantization_config,
         device_map="auto",
+        token=hf_token,
     )
     model.eval()
 
-    tokenizer = load_tokenizer(adapter_dir, trust_remote_code=args.trust_remote_code)
+    tokenizer = load_tokenizer(
+        args.adapter_id,
+        base_model_id=peft_config.base_model_name_or_path,
+        trust_remote_code=args.trust_remote_code,
+        token=hf_token,
+    )
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": input_text},

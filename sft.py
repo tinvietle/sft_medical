@@ -119,6 +119,14 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def validate_args(args: argparse.Namespace) -> None:
+    if args.no_push_to_hub:
+        return
+
+    if not args.hub_model_id:
+        raise ValueError("--hub-model-id is required unless --no-push-to-hub is set.")
+
+
 def get_torch_dtype(dtype_name: str) -> torch.dtype:
     if dtype_name == "float16":
         return torch.float16
@@ -315,7 +323,7 @@ def save_and_push_outputs(
 
     if not args.no_push_to_hub:
         trainer.push_to_hub(dataset_name=Path(args.dataset_dir).name)
-        tokenizer.push_to_hub(args.hub_model_id or Path(args.output_dir).name)
+        tokenizer.push_to_hub(args.hub_model_id)
 
     if not args.push_merged:
         return
@@ -328,7 +336,7 @@ def save_and_push_outputs(
     if args.no_push_to_hub:
         return
 
-    merged_hub_model_id = args.merged_hub_model_id or f"{args.hub_model_id or Path(args.output_dir).name}-merged"
+    merged_hub_model_id = args.merged_hub_model_id or f"{args.hub_model_id}-merged"
     merged_model.push_to_hub(merged_hub_model_id)
     tokenizer.push_to_hub(merged_hub_model_id)
 
@@ -336,6 +344,7 @@ def save_and_push_outputs(
 def main() -> None:
     load_env()
     args = parse_args()
+    validate_args(args)
     set_seed(args.seed)
     model_source = resolve_model_source(args)
     if args.download_model_only:
