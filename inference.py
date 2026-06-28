@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 
@@ -40,9 +41,9 @@ def parse_args() -> argparse.Namespace:
         help="Optional file containing the input case text.",
     )
     parser.add_argument(
-        "--live-chat",
-        action="store_true",
-        help="Run an interactive stateless chat loop. Type 'q' to quit.",
+        "--batch",
+        default=None,
+        help="Path to a JSON file containing a list of objects with a `question` field. Writes results to output.json.",
     )
     parser.add_argument(
         "--max-new-tokens",
@@ -96,7 +97,7 @@ def get_hf_token() -> str | None:
 
 
 def resolve_input_text(args: argparse.Namespace) -> str:
-    if args.live_chat:
+    if args.batch is not None:
         return ""
 
     if args.text is not None:
@@ -199,6 +200,53 @@ def generate_response(
     return tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
 
 
+def run_batch(
+    *,
+    batch_path: str,
+    fine_tuned_model,
+    tokenizer,
+    max_new_tokens: int | None,
+    do_sample: bool,
+    temperature: float,
+    top_p: float,
+) -> None:
+    input_path = Path(batch_path)
+    records = json.loads(input_path.read_text(encoding="utf-8"))
+    if not isinstance(records, list):
+        raise ValueError(f"Expected {input_path} to contain a JSON list of objects.")
+
+    output_records = []
+    total_records = len(records)
+    for index, record in enumerate(records, start=1):
+        if not isinstance(record, dict):
+            raise ValueError(f"Expected item {index} in {input_path} to be a JSON object.")
+
+        question = record.get("question")
+        if not isinstance(question, str) or not question.strip():
+            raise ValueError(f"Expected item {index} in {input_path} to contain a non-empty string `question`.")
+
+        response = generate_response(
+            fine_tuned_model,
+            tokenizer,
+            query=question.strip(),
+            max_new_tokens=max_new_tokens,
+            do_sample=do_sample,
+            temperature=temperature,
+            top_p=top_p,
+        )
+        output_record = dict(record)
+        output_record["answer"] = response
+        output_records.append(output_record)
+        print(f"Processed {index}/{total_records}", flush=True)
+
+    output_path = Path("output.json")
+    output_path.write_text(
+        json.dumps(output_records, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    print(f"Saved batch output to {output_path}", flush=True)
+
+
 def main() -> None:
     load_env()
     args = parse_args()
@@ -236,24 +284,16 @@ def main() -> None:
         token=hf_token,
     )
 
-    if args.live_chat:
-        while True:
-            query = input("query> ").strip()
-            if query == "q":
-                break
-            if not query:
-                continue
-
-            response = generate_response(
-                fine_tuned_model,
-                tokenizer,
-                query=query,
-                max_new_tokens=args.max_new_tokens,
-                do_sample=args.do_sample,
-                temperature=args.temperature,
-                top_p=args.top_p,
-            )
-            print(response)
+    if args.batch is not None:
+        run_batch(
+            batch_path=args.batch,
+            fine_tuned_model=fine_tuned_model,
+            tokenizer=tokenizer,
+            max_new_tokens=args.max_new_tokens,
+            do_sample=args.do_sample,
+            temperature=args.temperature,
+            top_p=args.top_p,
+        )
         return
 
     response = generate_response(
