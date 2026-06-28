@@ -40,6 +40,11 @@ def parse_args() -> argparse.Namespace:
         help="Optional file containing the input case text.",
     )
     parser.add_argument(
+        "--live-chat",
+        action="store_true",
+        help="Run an interactive stateless chat loop. Type 'q' to quit.",
+    )
+    parser.add_argument(
         "--max-new-tokens",
         type=int,
         default=None,
@@ -91,6 +96,9 @@ def get_hf_token() -> str | None:
 
 
 def resolve_input_text(args: argparse.Namespace) -> str:
+    if args.live_chat:
+        return ""
+
     if args.text is not None:
         value = args.text.strip()
     elif args.text_file is not None:
@@ -150,6 +158,47 @@ def load_tokenizer(
     return tokenizer
 
 
+def generate_response(
+    fine_tuned_model,
+    tokenizer,
+    *,
+    query: str,
+    max_new_tokens: int | None,
+    do_sample: bool,
+    temperature: float,
+    top_p: float,
+) -> str:
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": query},
+    ]
+
+    prompt = tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True,
+    )
+    model_inputs = tokenizer(prompt, return_tensors="pt").to(fine_tuned_model.device)
+
+    generation_kwargs = {
+        "pad_token_id": tokenizer.pad_token_id,
+        "eos_token_id": tokenizer.eos_token_id,
+        "do_sample": do_sample,
+    }
+    if max_new_tokens is not None:
+        generation_kwargs["max_new_tokens"] = max_new_tokens
+    if do_sample:
+        generation_kwargs["temperature"] = temperature
+        generation_kwargs["top_p"] = top_p
+
+    with torch.no_grad():
+        output_ids = fine_tuned_model.generate(**model_inputs, **generation_kwargs)
+
+    prompt_length = model_inputs["input_ids"].shape[-1]
+    generated_ids = output_ids[0][prompt_length:]
+    return tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
+
+
 def main() -> None:
     load_env()
     args = parse_args()
@@ -186,35 +235,36 @@ def main() -> None:
         trust_remote_code=args.trust_remote_code,
         token=hf_token,
     )
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": input_text},
-    ]
 
-    prompt = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
+    if args.live_chat:
+        while True:
+            query = input("query> ").strip()
+            if query == "q":
+                break
+            if not query:
+                continue
+
+            response = generate_response(
+                fine_tuned_model,
+                tokenizer,
+                query=query,
+                max_new_tokens=args.max_new_tokens,
+                do_sample=args.do_sample,
+                temperature=args.temperature,
+                top_p=args.top_p,
+            )
+            print(response)
+        return
+
+    response = generate_response(
+        fine_tuned_model,
+        tokenizer,
+        query=input_text,
+        max_new_tokens=args.max_new_tokens,
+        do_sample=args.do_sample,
+        temperature=args.temperature,
+        top_p=args.top_p,
     )
-    model_inputs = tokenizer(prompt, return_tensors="pt").to(fine_tuned_model.device)
-
-    generation_kwargs = {
-        "pad_token_id": tokenizer.pad_token_id,
-        "eos_token_id": tokenizer.eos_token_id,
-        "do_sample": args.do_sample,
-    }
-    if args.max_new_tokens is not None:
-        generation_kwargs["max_new_tokens"] = args.max_new_tokens
-    if args.do_sample:
-        generation_kwargs["temperature"] = args.temperature
-        generation_kwargs["top_p"] = args.top_p
-
-    with torch.no_grad():
-        output_ids = fine_tuned_model.generate(**model_inputs, **generation_kwargs)
-
-    prompt_length = model_inputs["input_ids"].shape[-1]
-    generated_ids = output_ids[0][prompt_length:]
-    response = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
     print(response)
 
 
