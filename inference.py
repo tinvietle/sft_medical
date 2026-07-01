@@ -235,7 +235,7 @@ def run_batch(
             top_p=top_p,
         )
         output_record = dict(record)
-        output_record["answer"] = response
+        output_record["smol_answer"] = response
         output_records.append(output_record)
         print(f"Processed {index}/{total_records}", flush=True)
 
